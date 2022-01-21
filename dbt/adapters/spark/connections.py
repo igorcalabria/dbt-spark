@@ -70,6 +70,7 @@ class SparkCredentials(Credentials):
     port: int = 443
     auth: Optional[str] = None
     kerberos_service_name: Optional[str] = None
+    http_path: Optional[str] = None
     organization: str = '0'
     connect_retries: int = 0
     connect_timeout: int = 10
@@ -346,30 +347,43 @@ class SparkConnectionManager(SQLConnectionManager):
         for i in range(1 + creds.connect_retries):
             try:
                 if creds.method == SparkConnectionMethod.HTTP:
-                    cls.validate_creds(creds, ['token', 'host', 'port',
-                                               'cluster', 'organization'])
+                    conn_url = None
 
-                    # Prepend https:// if it is missing
-                    host = creds.host
-                    if not host.startswith('https://'):
-                        host = 'https://' + creds.host
+                    if creds.http_path != None:
+                        cls.validate_creds(creds, ['token', 'host'])
+                        path = creds.http_path
+                        if path[0] != '/':
+                            path = '/' + path
 
-                    conn_url = cls.SPARK_CONNECTION_URL.format(
-                        host=host,
-                        port=creds.port,
-                        organization=creds.organization,
-                        cluster=creds.cluster
-                    )
+                        conn_url = f"{creds.host}:{creds.port}{path}"
+                        extra_header = {
+                            'Authorization': f"Basic {creds.token}"
+                        }
+                    else:
+                        cls.validate_creds(creds, ['token', 'host', 'port',
+                                                   'cluster', 'organization'])
+                        # Prepend https:// if it is missing
+                        host = creds.host
+                        if not host.startswith('https://'):
+                            host = 'https://' + creds.host
+
+                        conn_url = cls.SPARK_CONNECTION_URL.format(
+                            host=host,
+                            port=creds.port,
+                            organization=creds.organization,
+                            cluster=creds.cluster
+                        )
+                        raw_token = "token:{}".format(creds.token).encode()
+                        token = base64.standard_b64encode(raw_token).decode()
+
+                        extra_header = {
+                            'Authorization': 'Basic {}'.format(token)
+                        }
 
                     logger.debug("connection url: {}".format(conn_url))
 
                     transport = THttpClient.THttpClient(conn_url)
-
-                    raw_token = "token:{}".format(creds.token).encode()
-                    token = base64.standard_b64encode(raw_token).decode()
-                    transport.setCustomHeaders({
-                        'Authorization': 'Basic {}'.format(token)
-                    })
+                    transport.setCustomHeaders(extra_header)
 
                     conn = hive.connect(thrift_transport=transport)
                     handle = PyhiveConnectionWrapper(conn)
