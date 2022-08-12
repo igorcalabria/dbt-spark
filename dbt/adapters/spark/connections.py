@@ -357,7 +357,7 @@ class SparkConnectionManager(SQLConnectionManager):
 
                         conn_url = f"{creds.host}:{creds.port}{path}"
                         extra_header = {
-                            'Authorization': f"Basic {creds.token}"
+                            'Authorization': f"Bearer {creds.token}"
                         }
                     else:
                         cls.validate_creds(creds, ['token', 'host', 'port',
